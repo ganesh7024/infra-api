@@ -7,7 +7,12 @@ require_once ('././config/dbHandler.php');
 $layer_name = $_POST['layer_name'];
 $gid = $_POST['gid'];
 
-$delete_query = pg_query(DBCONNECT,"delete from $layer_name where gid = '$gid'");
+$gid_array = explode(",", $gid);
+
+foreach ($gid_array as $gid) {
+ 
+
+ $delete_query = pg_query(DBCONNECT,"delete from $layer_name where gid = '$gid'");
 
 if($delete_query) {
 	        http_response_code(201);
@@ -26,7 +31,8 @@ else  {
 
             ));	
 	
+} 
+
 }
 
 ?>
-
