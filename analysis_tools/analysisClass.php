@@ -125,8 +125,9 @@ class analysisManager
 	  
 
 	    return array(
-			    "status" => true,
+	        "status" => true,
                 "upload_message" => "pipes and junctions created sucessfull",
+		"input_table" => $tableName,
                 "pipes_data" => $output_pipes,
                 "junctions_data" => $output_junctions
             );
