@@ -6,12 +6,13 @@ require_once ('././config/dbHandler.php');
 
 $layer_name = $_POST['layer_name'];
 $gid = $_POST['gid'];
+$json = $_POST['json'];
 
 
 
- $insert = pg_query(DBCON, "update $layer_name set geom =  ST_SetSRID(ST_GeomFromGeoJSON('$json'),3857) where gid ='$gid'");
+ $update = pg_query(DBCON, "update $layer_name set geom =  ST_SetSRID(ST_GeomFromGeoJSON('$json'),3857) where gid ='$gid'");
 
-if($delete_query) {
+if($update) {
 	        http_response_code(201);
 	        echo json_encode( array(
 			    "status" => true,
