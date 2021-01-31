@@ -12,6 +12,7 @@ class analysisManager
  public $snap_tolerance;
  public $max_pipe_length;
  public $projection;
+ public $existing_layer;
 
  function uploadData()
     {
@@ -47,7 +48,7 @@ class analysisManager
 		
 		$proj = $this->projection;
 
-        $cmd = '"E:\program files\bin\shp2pgsql" -s ' . $proj . ' -c "' . $shp_location[0] . '" ' . $uni_name;
+        $cmd = '"C:\Program Files\PostgreSQL\10\bin\shp2pgsql" -s ' . $proj . ' -c "' . $shp_location[0] . '" ' . $uni_name;
 		
 		
 
@@ -88,18 +89,31 @@ class analysisManager
     }
 
     function buildModel() {
-
+    if (isset($this->existing_layer)) {
+	  $tableName = $this->existing_layer;
+	  $tableName = $tableName;
+	  $analysisTable = "build_model_$tableName". '_' . uniqid();
+	  $output_pipes = "pipes_$tableName". '_' . uniqid();
+	  $output_junctions = "junctions_$tableName". '_' . uniqid();
+	   $topo_name = "topo_$tableName". '_' . uniqid();
+	}
+    else{
 	  $tableName =  $this->uploadData();
 	  $tableName =  $tableName['u_name'];
 	  $analysisTable = "build_model_$tableName";
-	  $topo_name = "topo_$tableName";
-	  $snap_tolerance = $this->snap_tolerance;
-	  $max_pipe_length = $this->max_pipe_length;
 	  $output_pipes = "pipes_$tableName";
 	  $output_junctions = "junctions_$tableName";
+	   $topo_name = "topo_$tableName";
+	}
+	  
+	  
+	 
+	  $snap_tolerance = $this->snap_tolerance;
+	  $max_pipe_length = $this->max_pipe_length;
+	 
 
 
-	  $create_analytics_table = pg_query(DBCONNECT, "create table $analysisTable as SELECT ST_Line_Substring(the_geom, $max_pipe_length*n/length, CASE WHEN $max_pipe_length*(n+1) < length THEN $max_pipe_length*(n+1)/length ELSE 1 END) As geom FROM (SELECT ST_LineMerge((ST_Dump(ST_LineMerge(ST_Node(st_union($tableName.geom))))).geom) AS the_geom, ST_Length((ST_Dump(ST_LineMerge(ST_Node(st_union($tableName.geom))))).geom) As length FROM $tableName ) AS t CROSS JOIN generate_series(0,10000) AS n WHERE n*$max_pipe_length/length < 1;");
+	  $create_analytics_table = pg_query(DBCONNECT, "create table $analysisTable as SELECT ST_LineSubstring(the_geom, $max_pipe_length*n/length, CASE WHEN $max_pipe_length*(n+1) < length THEN $max_pipe_length*(n+1)/length ELSE 1 END) As geom FROM (SELECT ST_LineMerge((ST_Dump(ST_LineMerge(ST_Node(st_union($tableName.geom))))).geom) AS the_geom, ST_Length((ST_Dump(ST_LineMerge(ST_Node(st_union($tableName.geom))))).geom) As length FROM $tableName ) AS t CROSS JOIN generate_series(0,10000) AS n WHERE n*$max_pipe_length/length < 1;");
 
 	  $create_topo = pg_query(DBCONNECT, "SELECT topology.CreateTopology('$topo_name', 3857)");
 	  $create_topo_geom = pg_query(DBCONNECT, "SELECT topology.AddTopoGeometryColumn('$topo_name', 'public', '$analysisTable', 'topo_geom', 'LINESTRING')");
@@ -114,20 +128,21 @@ class analysisManager
 	  $update_mesh = pg_query(DBCONNECT, "update $output_pipes set graph_type = 'MESHED'");
 	  $update_mesh = pg_query(DBCONNECT, "update $output_pipes set graph_type = 'BRANCHED' from ( select a.edge_id from $output_pipes as a, $output_pipes as b where St_touches(ST_EndPoint(a.geom),b.geom) group by a.edge_id HAVING COUNT(*) < 2 ) as subquery where $output_pipes.edge_id = subquery.edge_id");
 	  $update_degree = pg_query(DBCONNECT, "update $output_junctions set degree = subquery.count from ( select distinct(a.node_id), count(*) from $output_junctions as a ,$output_pipes as b where st_intersects(a.geom, b.geom) group by a.node_id) as subquery where $output_junctions.node_id = subquery.node_id");
+	  
+	  $addDCID2J = pg_query(DBCONNECT, "alter table $output_junctions add COLUMN dc_id text, add COLUMN ref_type text");
+	  $update_ref = pg_query(DBCONNECT, "update $output_junctions set ref_type = 'junction'");
+	  $addDCID2P = pg_query(DBCONNECT, "alter table $output_pipes add COLUMN dc_id text");
 
 
 	  //$delete_topo_query = pg_query(DBCONNECT, "SELECT topology.DropTopology('$topo_name')");
 	  //$delete_topo_query = pg_query(DBCONNECT, "Drop table $analysisTable");
 	  $this->addToGeoserver($output_pipes);
 	  $this->addToGeoserver($output_junctions);
-	  $this->addLayerIndex($output_pipes, "Pipes of ".$this->layer_name);
-	  $this->addLayerIndex($output_junctions, "Junctions of ".$this->layer_name);
-	  
 
 	    return array(
-	        "status" => true,
+			    "status" => true,
                 "upload_message" => "pipes and junctions created sucessfull",
-		"input_table" => $tableName,
+				"input_table" => $tableName,
                 "pipes_data" => $output_pipes,
                 "junctions_data" => $output_junctions
             );
@@ -158,16 +173,6 @@ class analysisManager
 
         return sprintf('%04X%04X-%04X-%04X-%04X-%04X%04X%04X', mt_rand(0, 65535) , mt_rand(0, 65535) , mt_rand(0, 65535) , mt_rand(16384, 20479) , mt_rand(32768, 49151) , mt_rand(0, 65535) , mt_rand(0, 65535) , mt_rand(0, 65535));
     }
-	
-	function getAllLayers() {
-		 $getLayers = pg_query(DBCONNECT, "select * from layers");
-		 
-		 
-			return pg_fetch_all($getLayers);
-
-			
-		
-	}
 	
 	
 	function addToGeoserver($layerName) {
