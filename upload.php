@@ -13,7 +13,7 @@ if (file_exists($_FILES['shp_import']['tmp_name']) || is_uploaded_file($_FILES['
 	$data->layer_name =  $layer_name;
 	$data->projection =  $projection;
 	$data->u_file = $_FILES['shp_import'];
-	$messsege = $data->uploadData();
+	$messsege = $data->uploadData($data->u_file);
 	
 	 http_response_code(201);
      echo json_encode($messsege);
