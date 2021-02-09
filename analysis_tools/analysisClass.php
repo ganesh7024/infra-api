@@ -44,7 +44,7 @@ class analysisManager
 
             $proj = $this->projection;
 
-            $cmd = '"C:\Program Files\PostgreSQL\10\bin\shp2pgsql" -s ' . $proj . ' -c "' . $shp_location[0] . '" ' . $uni_name;
+            $cmd = '"' . BIN_location . '" -s ' . $proj . ' -c "' . $shp_location[0] . '" ' . $uni_name;
 
             $queries = shell_exec($cmd);
 
@@ -125,11 +125,11 @@ class analysisManager
         $update_mesh = pg_query(DBCONNECT, "update $output_pipes set graph_type = 'BRANCHED' from ( select a.edge_id from $output_pipes as a, $output_pipes as b where St_touches(ST_EndPoint(a.geom),b.geom) group by a.edge_id HAVING COUNT(*) < 2 ) as subquery where $output_pipes.edge_id = subquery.edge_id");
         $update_degree = pg_query(DBCONNECT, "update $output_junctions set degree = subquery.count from ( select distinct(a.node_id), count(*) from $output_junctions as a ,$output_pipes as b where st_intersects(a.geom, b.geom) group by a.node_id) as subquery where $output_junctions.node_id = subquery.node_id");
 
-        $addDCID2J = pg_query(DBCONNECT, "alter table $output_junctions add COLUMN dc_id text, add COLUMN ref_type text,  add COLUMN new_dc text");
+        $addDCID2J = pg_query(DBCONNECT, "alter table $output_junctions add COLUMN dc_id text, add COLUMN ref_type text,  add COLUMN new_dc text,  add COLUMN gid text");
         $update_ref = pg_query(DBCONNECT, "update $output_junctions set ref_type = 'junction'");
-        $addDCID2P = pg_query(DBCONNECT, "alter table $output_pipes add COLUMN dc_id text, add COLUMN new_dc text");
-        $updDC2p = pg_query(DBCONNECT, "update $output_pipes set dc_id = edge_id");
-        $updDC2j = pg_query(DBCONNECT, "update $output_junctions set dc_id = node_id");
+        $addDCID2P = pg_query(DBCONNECT, "alter table $output_pipes add COLUMN dc_id text, add COLUMN new_dc text, add COLUMN node1 text, add COLUMN node2 text,  add COLUMN gid text");
+        $updDC2p = pg_query(DBCONNECT, "update $output_pipes set dc_id = edge_id, gid = edge_id");
+        $updDC2j = pg_query(DBCONNECT, "update $output_junctions set dc_id = node_id, gid = node_id");
         $traceFunctionName = "trace_pipelines_" . uniqid();
         $createTraceFunction = pg_query(DBCONNECT, 'CREATE OR REPLACE FUNCTION public.' . $traceFunctionName . '( p_start_id text, p_start_sequence integer) RETURNS TABLE(line_id text, line_sequence integer) LANGUAGE plpgsql COST 100 VOLATILE ROWS 1000 AS $BODY$ DECLARE r record; branch_rec record; next_geoms geometry[]; last_geoms geometry[]; next_geom geometry; next_sequence int =p_start_sequence; BEGIN select geom from ' . $output_pipes . ' where dc_id = p_start_id into next_geom; update ' . $output_pipes . ' set new_dc=next_sequence where dc_id= p_start_id; next_geoms = array_append(next_geoms,next_geom); LOOP if array_length(next_geoms,1)>0 then else EXIT; end if; last_geoms=array[]::geometry[]; last_geoms=last_geoms||next_geoms; next_geoms=array[]::geometry[]; for i IN 1..array_upper(last_geoms, 1) loop for r in select * from ' . $output_pipes . ' where st_intersects( ST_PointN(ST_LineMerge(last_geoms[i]),ST_NPoints(ST_LineMerge(last_geoms[i]))), ST_PointN(ST_LineMerge(geom),1) ) loop if ST_Equals(r.geom,last_geoms[i] ) then continue; else next_sequence = next_sequence+1; line_id = r.dc_id; line_sequence = next_sequence; update ' . $output_pipes . ' set new_dc=line_sequence where dc_id= line_id; return next; for branch_rec in select * from ' . $traceFunctionName . '(r.dc_id,line_sequence ) loop line_id = branch_rec.line_id; line_sequence = branch_rec.line_sequence; next_sequence = branch_rec.line_sequence; return next; end loop; end if; end loop; end loop; END LOOP; END ; $BODY$; ALTER FUNCTION public.' . $traceFunctionName . '(text, integer) OWNER TO postgres;');
 
@@ -147,6 +147,10 @@ class analysisManager
 
         $traceJunctions = pg_query(DBCONNECT, "update $output_junctions set new_dc = subquery.row_number from (select ROW_NUMBER () OVER (ORDER BY a.new_dc::int), a.dc_id, a.new_dc::int, b.dc_id as j_id from $output_pipes as a, $output_junctions as b where st_intersects(ST_EndPoint(a.geom), b.geom)) as subquery where $output_junctions.dc_id = subquery.j_id;");
 
+        $updStart = pg_query(DBCONNECT, "update $output_pipes set node1 = subquery.new_s from (select a.start_node, a.end_node, b.node_id, b.new_dc as new_s from $output_pipes as a , $output_junctions as b where a.start_node = b.node_id ) as subquery where $output_pipes.start_node = subquery.node_id");
+
+        $updEnd = pg_query(DBCONNECT, "update $output_pipes set node2 = subquery.new_s from (select a.start_node, a.end_node, b.node_id, b.new_dc as new_s from $output_pipes as a , $output_junctions as b where a.end_node = b.node_id ) as subquery where $output_pipes.end_node = subquery.node_id");
+
         $dropFunction = pg_query(DBCONNECT, "DROP FUNCTION $traceFunctionName");
 
         //$delete_topo_query = pg_query(DBCONNECT, "SELECT topology.DropTopology('$topo_name')");
@@ -156,6 +160,9 @@ class analysisManager
         $this->addToGeoserver($output_pipes);
         $this->addToGeoserver($output_junctions);
         $this->addToGeoserver($tank_tableName);
+        $this->addLayerIndex($output_pipes, 'Pipes Data For ' . $this->layer_name);
+        $this->addLayerIndex($output_junctions, 'Junctions For ' . $this->layer_name);
+        $this->addLayerIndex($tank_tableName, 'Tank For ' . $this->layer_name);
 
         return array(
             "status" => true,
