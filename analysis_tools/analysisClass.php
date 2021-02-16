@@ -103,6 +103,7 @@ class analysisManager
 
             $tank_tableName = $this->uploadData($this->tank_layer);
             $tank_tableName = $tank_tableName['u_name'];
+			$updateLayersIndex4Tank =  pg_query(DBCONNECT,"update layers set layer_name = 'Tank Data for $this->layer_name' where table_name = '$tank_tableName'");
 
         }
 
@@ -150,19 +151,20 @@ class analysisManager
         $updStart = pg_query(DBCONNECT, "update $output_pipes set node1 = subquery.new_s from (select a.start_node, a.end_node, b.node_id, b.new_dc as new_s from $output_pipes as a , $output_junctions as b where a.start_node = b.node_id ) as subquery where $output_pipes.start_node = subquery.node_id");
 
         $updEnd = pg_query(DBCONNECT, "update $output_pipes set node2 = subquery.new_s from (select a.start_node, a.end_node, b.node_id, b.new_dc as new_s from $output_pipes as a , $output_junctions as b where a.end_node = b.node_id ) as subquery where $output_pipes.end_node = subquery.node_id");
+        $updP = pg_query(DBCONNECT, "update $output_pipes set node2 = 'J-'||node2, node1 = 'J-'||node1, new_dc = 'P-'||new_dc");
+        $updJ = pg_query(DBCONNECT, "update $output_junctions set new_dc = 'J-'||new_dc");
+		
+		$updTankP = pg_query(DBCONNECT, "update $output_pipes set node1 = 'T-1' where node1 is null");
+        $updTankJ = pg_query(DBCONNECT, "update $output_junctions set new_dc = 'T-1' where new_dc is null");
 
-        $dropFunction = pg_query(DBCONNECT, "DROP FUNCTION $traceFunctionName");
-
-        //$delete_topo_query = pg_query(DBCONNECT, "SELECT topology.DropTopology('$topo_name')");
-        //$delete_topo_query = pg_query(DBCONNECT, "Drop table $analysisTable");
-        
+        $dropFunction = pg_query(DBCONNECT, "DROP FUNCTION $traceFunctionName"); 
 
         $this->addToGeoserver($output_pipes);
         $this->addToGeoserver($output_junctions);
         $this->addToGeoserver($tank_tableName);
         $this->addLayerIndex($output_pipes, 'Pipes Data For ' . $this->layer_name);
         $this->addLayerIndex($output_junctions, 'Junctions For ' . $this->layer_name);
-        $this->addLayerIndex($tank_tableName, 'Tank For ' . $this->layer_name);
+        
 
         return array(
             "status" => true,
