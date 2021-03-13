@@ -211,6 +211,12 @@ class analysisManager
         exec('curl -v -u ' . GSUSER . ':' . GSPASS . ' -XPOST -H "Content-type: text/xml" -d "<featureType><name>' . $layerName . '</name></featureType>" ' . GSURL . '/rest/workspaces/' . WORKSPACE . '/datastores/' . DATASTORE . '/featuretypes', $output, $return);
 
     }
+	
+    function getAllLayers() {
+        $getLayers = pg_query(DBCONNECT, "select * from layers");
+           return pg_fetch_all($getLayers);   
+       
+   }
 
 }
 
